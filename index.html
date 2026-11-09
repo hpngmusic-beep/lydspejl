@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lydspejl – stereo- og spektralmonitor</title>
+<meta name="theme-color" content="#0b0d10">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="dot" id="liveDot"></span>LYDSPEJL</div>
+  <div id="status" class="status">Standby</div>
+  <div class="spacer"></div>
+  <button id="btnStandby" title="Tilbage til standby (kilden holdes åben)">Standby</button>
+  <button id="btnFreeze" title="Frys billedet (mellemrum)">Frys</button>
+  <label class="chk" title="Send lyden ud igen. Normalt slået fra, fordi fane- og systemlyd allerede spiller."><input type="checkbox" id="monitorOut"> Lyt gennem</label>
+  <button id="btnSource" title="Skift lydkilde">Kilde…</button>
+  <button id="btnInstall" class="primary" hidden>Installér som app</button>
+  <button id="btnHelp" title="Hjælp">?</button>
+</header>
+
+<main id="app">
+  <section class="panel" id="lissaPanel">
+    <div class="ptitle"><b>Lissajous / goniometer</b>
+      <label class="ctrl">Visning
+        <select id="lMode">
+          <option value="mix">Bånd – blandet farve</option>
+          <option value="dom">Bånd – dominant bånd</option>
+          <option value="heat">Heat – alle bånd</option>
+          <option value="full">Heat – fuldt signal</option>
+        </select></label>
+      <label class="ctrl">Akse
+        <select id="lAxis"><option value="ms">M/S (goniometer)</option><option value="xy">X/Y (L/R)</option></select></label>
+    </div>
+    <canvas id="lissaCanvas" title="Dobbeltklik: fuld skærm"></canvas>
+    <div class="ptitle">
+      <label class="chk"><input type="checkbox" id="lAuto"> Auto-gain</label>
+      <label class="ctrl">Gain <input type="range" id="lGain" min="-12" max="30" step="0.5"><span id="lGainV" class="num"></span></label>
+      <label class="ctrl">Efterglød <input type="range" id="lPersist" min="0" max="100"></label>
+      <label class="ctrl">Kontrast <input type="range" id="lSens" min="0" max="100"></label>
+      <label class="chk"><input type="checkbox" id="lEllipse"> Ellipser</label>
+      <label class="chk" title="Skalér hvert bånd til sin egen top, så stereobilledet ses uanset niveau"><input type="checkbox" id="normBands"> Normalisér bånd</label>
+    </div>
+  </section>
+
+  <section class="panel" id="specPanel">
+    <div class="ptitle"><b>Spektrum</b>
+      <label class="ctrl">Kurver
+        <select id="sView"><option value="lr">L / R</option><option value="ms">Mid / Side</option><option value="sum">Sum</option></select></label>
+      <label class="ctrl">Hældning
+        <select id="sTilt"><option value="0">0 dB/okt</option><option value="3">3 dB/okt</option><option value="4.5">4,5 dB/okt</option></select></label>
+      <label class="ctrl">Område
+        <select id="sRange"><option value="60">60 dB</option><option value="80">80 dB</option><option value="100">100 dB</option><option value="120">120 dB</option></select></label>
+      <label class="ctrl">Udglatning <input type="range" id="sSmooth" min="0" max="0.95" step="0.05"></label>
+      <label class="chk"><input type="checkbox" id="sHold"> Peak hold</label>
+      <span class="hint">Træk i båndkanterne for at flytte frekvensområder</span>
+    </div>
+    <canvas id="specCanvas"></canvas>
+    <canvas id="sgCanvas"></canvas>
+  </section>
+
+  <section class="panel" id="meterPanel">
+    <div class="ptitle"><b>Niveau, fase og loudness</b>
+      <label class="ctrl">Mål
+        <select id="target">
+          <option value="-14">−14 LUFS (Spotify/YouTube)</option>
+          <option value="-16">−16 LUFS (Apple/podcast)</option>
+          <option value="-18">−18 LUFS</option>
+          <option value="-23">−23 LUFS (EBU R128)</option>
+          <option value="-24">−24 LUFS (ATSC A/85)</option>
+        </select></label>
+      <button id="btnResetL">Nulstil integreret</button>
+    </div>
+    <canvas id="meterCanvas"></canvas>
+    <div class="readouts">
+      <div class="ro"><span>Momentary</span><b id="roM">–</b></div>
+      <div class="ro"><span>Short-term</span><b id="roS">–</b></div>
+      <div class="ro"><span>Integreret</span><b id="roI">–</b><small id="roD"></small></div>
+      <div class="ro"><span>LRA</span><b id="roLRA">–</b></div>
+      <div class="ro"><span>True peak max</span><b id="roTP">–</b></div>
+      <div class="ro"><span>PLR</span><b id="roPLR">–</b></div>
+    </div>
+    <canvas id="histCanvas"></canvas>
+  </section>
+
+  <section class="panel" id="bandPanel">
+    <div class="ptitle"><b>Frekvensbånd</b>
+      <label class="ctrl">Forvalg <select id="preset"></select></label>
+      <label class="ctrl">Flanker
+        <select id="slope"><option value="1">12 dB/okt</option><option value="2">24 dB/okt (LR4)</option><option value="4">48 dB/okt (LR8)</option></select></label>
+      <button id="btnAddBand">+ Tilføj bånd</button>
+      <span class="hint">Taster 1–9 = solo · 0 = alle</span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Vis</th><th>Solo</th><th></th><th>Navn</th><th>Fra (Hz)</th><th>Til (Hz)</th><th>Niveau</th><th>Korrelation</th><th>Balance L/R</th><th>Bredde S/M</th><th></th></tr></thead>
+        <tbody id="bandBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- Opstart / standby -->
+<div id="standby" class="overlay">
+  <div class="card">
+    <div class="logo"><img src="icons/icon.svg" alt=""><div><h1>Lydspejl</h1><p>Stereo- og spektralmonitor</p></div></div>
+    <div id="sbIdle">
+      <p class="lead">Vælg hvad Lydspejl skal lytte til. Når der kommer lyd, spørger den, om du vil analysere.</p>
+      <div class="srcgrid">
+        <button class="srcbtn" id="srcDisplay"><b>Fane eller hele skærmen</b><span>YouTube, browser og, med Chrome 141+ på macOS 14.2+, al systemlyd. Husk at slå <em>Del lyd</em> til.</span></button>
+        <div class="srcbtn"><b>Lydenhed / loopback</b><span>BlackHole, Loopback, lydkort. Kan startes automatisk ved opstart.</span>
+          <div class="row"><select id="devSel"><option value="">Standard-input</option></select><button id="srcDevice">Lyt</button></div></div>
+        <button class="srcbtn" id="srcFile"><b>Lydfil</b><span>Analysér en fil fra disken.</span></button>
+        <input type="file" id="fileIn" accept="audio/*,video/*" hidden>
+        <button class="srcbtn" id="srcTest"><b>Testsignal</b><span>Bas (mono), mellemtone (roterende) og bred støj i toppen.</span></button>
+      </div>
+      <label class="chk"><input type="checkbox" id="autoDevice"> Start automatisk med den valgte lydenhed, når Lydspejl åbnes</label>
+    </div>
+    <div id="sbListen" hidden>
+      <div class="listen"><div class="pulse"></div><div><b id="sbSrcName">Lytter…</b><p id="sbMsg">Venter på lyd. Afspil noget, så spørger jeg.</p></div></div>
+      <div class="sbmeter"><i id="sbLevel"></i><span id="sbLevelTxt" class="num">−∞ dBFS</span></div>
+      <div id="sbAsk" class="ask" hidden>
+        <h2>Der er lyd. Vil du analysere?</h2>
+        <div class="row"><button class="primary big" id="btnAnalyze">Analysér</button><button id="btnNotNow">Ikke nu</button></div>
+        <label class="chk"><input type="checkbox" id="autoAnalyze"> Spørg ikke igen – analysér automatisk</label>
+      </div>
+      <div class="row"><button id="btnAnalyzeNow">Åbn analyse nu</button><button id="btnChangeSrc">Skift kilde</button></div>
+      <label class="chk"><input type="checkbox" id="notify"> Giv besked med en notifikation, når appen er i baggrunden</label>
+    </div>
+    <p id="sbErr" class="err" hidden></p>
+  </div>
+</div>
+
+<audio id="player" controls hidden></audio>
+
+<dialog id="help">
+  <h2>Sådan fanger du lyden</h2>
+  <h3>1 · En browserfane (fx YouTube)</h3>
+  <p>Vælg <b>Fane eller hele skærmen</b> → fanebladet <b>Chrome-fane</b> → vælg fanen → slå <b>Del også lyd fra fanen</b> til → Del. Fanen kan stadig høres.</p>
+  <h3>2 · Al lyd fra Macen</h3>
+  <p>Kræver Chrome 141 eller nyere og macOS 14.2 eller nyere. Vælg <b>Hele skærmen</b> og slå <b>Del også systemlyd</b> til. Første gang beder macOS om tilladelse under Systemindstillinger → Anonymitet og sikkerhed.</p>
+  <h3>3 · Loopback-enhed (mest stabilt og starter automatisk)</h3>
+  <ol>
+    <li>Installér <b>BlackHole 2ch</b> (gratis).</li>
+    <li>Åbn <b>Lyd-MIDI-opsætning</b> → + → <b>Opret enhed med flere udgange</b> → markér dine højttalere/hovedtelefoner <i>og</i> BlackHole 2ch.</li>
+    <li>Vælg den nye enhed som lydudgang i Systemindstillinger → Lyd.</li>
+    <li>I Lydspejl: <b>Lydenhed / loopback</b> → vælg <b>BlackHole 2ch</b>. Sæt flueben ved <i>Start automatisk</i>.</li>
+  </ol>
+  <h3>Visninger</h3>
+  <p><b>Goniometer (M/S):</b> mono står lodret, L og R på diagonalerne, fasefejl breder sig vandret. <b>Ellipser</b> viser hvert bånds stereobillede (2σ): smal = mono, rund = bred/ukorreleret, vandret = faseproblem.
+  <b>Korrelation</b> +1 = mono, 0 = ukorreleret, &lt; 0 = fase-/monokompatibilitetsproblem. <b>Bredde S/M</b> i dB: −∞ = mono, 0 dB = lige meget side og mid.</p>
+  <p><b>Taster:</b> mellemrum = frys · F = Lissajous i fuld skærm · 1–9 = solo bånd · 0 = alle bånd.</p>
+  <p class="dim">Al analyse sker lokalt i browseren. Lyden sendes ingen steder hen.</p>
+  <form method="dialog"><button class="primary">Luk</button></form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
